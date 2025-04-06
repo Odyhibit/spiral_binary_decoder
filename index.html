@@ -3,22 +3,83 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Spiral Binary Decoder</title>
+  <title>Spiral Binary Encoder/Decoder</title>
   <style>
     body { font-family: sans-serif; padding: 1em; background: #f4f4f4; }
     textarea { width: 100%; height: 200px; font-family: monospace; }
-    button { margin-top: 10px; padding: 10px; }
+    button, select { margin-top: 10px; padding: 10px; }
     pre { background: #fff; padding: 1em; margin-top: 1em; white-space: pre-wrap; word-break: break-word; }
+    .tabs { display: flex; gap: 10px; margin-bottom: 1em; }
+    .tab { padding: 10px; cursor: pointer; background: #ccc; border-radius: 5px; }
+    .tab.active { background: #999; font-weight: bold; }
+    .panel { display: none; }
+    .panel.active { display: block; }
   </style>
 </head>
 <body>
-  <h1>Spiral Binary Decoder</h1>
-  <p>Paste a square block of binary (1s and 0s):</p>
-  <textarea id="binaryInput"></textarea>
-  <button onclick="decodeAllSpirals()">Decode</button>
-  <pre id="output"></pre>
+  <h1>Spiral Binary Encoder/Decoder</h1>
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('decodePanel')">Decode</div>
+    <div class="tab" onclick="showTab('encodePanel')">Encode</div>
+  </div>
+
+  <div id="decodePanel" class="panel active">
+    <p>Paste a square block of binary (1s and 0s):</p>
+    <textarea id="binaryInput"></textarea><br/>
+    <label>Start Corner:</label>
+    <select id="decodeCorner">
+      <option value="tl">Top-Left</option>
+      <option value="tr">Top-Right</option>
+      <option value="bl">Bottom-Left</option>
+      <option value="br">Bottom-Right</option>
+    </select>
+    <label>Direction:</label>
+    <select id="decodeDir">
+      <option value="true">Clockwise</option>
+      <option value="false">Counter-Clockwise</option>
+    </select>
+    <label>Spiral:</label>
+    <select id="decodeInward">
+      <option value="false">Inward</option>
+      <option value="true">Outward</option>
+    </select><br/>
+    <button onclick="decodeAllSpirals()">Auto</button>
+    <button onclick="decodeSingle()">Decode</button>
+    <pre id="output"></pre>
+  </div>
+
+  <div id="encodePanel" class="panel">
+    <p>Enter ASCII text to encode:</p>
+    <textarea id="asciiInput"></textarea><br/>
+    <label>Start Corner:</label>
+    <select id="cornerSelect">
+      <option value="tl">Top-Left</option>
+      <option value="tr">Top-Right</option>
+      <option value="bl">Bottom-Left</option>
+      <option value="br">Bottom-Right</option>
+    </select>
+    <label>Direction:</label>
+    <select id="dirSelect">
+      <option value="true">Clockwise</option>
+      <option value="false">Counter-Clockwise</option>
+    </select>
+    <label>Spiral:</label>
+    <select id="inwardSelect">
+      <option value="false">Inward</option>
+      <option value="true">Outward</option>
+    </select><br/>
+    <button onclick="encodeSpiral()">Encode</button>
+    <pre id="encodeOutput"></pre>
+  </div>
 
   <script>
+    function showTab(id) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.querySelector(`[onclick*="${id}"]`).classList.add('active');
+      document.getElementById(id).classList.add('active');
+    }
+
     function parseBinaryInput(text) {
       const lines = text.trim().split(/\n+/).map(line => line.trim());
       const size = lines.length;
@@ -26,44 +87,55 @@
       return lines.map(line => line.split('').map(Number));
     }
 
-    function spiralOrder(matrix, startCorner, inward, clockwise) {
-      const n = matrix.length;
+    function rotateCoords(coords, size, corner) {
+      switch (corner) {
+        case 'tr': return coords.map(([r, c]) => [c, size - 1 - r]);
+        case 'br': return coords.map(([r, c]) => [size - 1 - r, size - 1 - c]);
+        case 'bl': return coords.map(([r, c]) => [size - 1 - c, r]);
+        case 'tl':
+        default: return coords;
+      }
+    }
+
+    function spiralCoordinates(n, inward, clockwise) {
+      const coords = [];
       const visited = Array.from({ length: n }, () => Array(n).fill(false));
-      const result = [];
-
-      const dirs = clockwise
-        ? [[0,1],[1,0],[0,-1],[-1,0]]
-        : [[1,0],[0,1],[-1,0],[0,-1]];
-
-      const corners = {
-        'tl': [0,0], 'tr': [0,n-1], 'bl': [n-1,0], 'br': [n-1,n-1]
-      };
-      let [r, c] = corners[startCorner];
-      let d = 0;
+      const directions = clockwise
+        ? [[0, 1], [1, 0], [0, -1], [-1, 0]]
+        : [[1, 0], [0, -1], [-1, 0], [0, 1]];
+      let r = 0, c = 0, dir = 0;
 
       for (let i = 0; i < n * n; i++) {
-        result.push(matrix[r][c]);
+        coords.push([r, c]);
         visited[r][c] = true;
-
-        let nr = r + dirs[d][0], nc = c + dirs[d][1];
+        let nr = r + directions[dir][0];
+        let nc = c + directions[dir][1];
         if (nr >= 0 && nr < n && nc >= 0 && nc < n && !visited[nr][nc]) {
           r = nr; c = nc;
         } else {
-          d = (d + 1) % 4;
-          r += dirs[d][0]; c += dirs[d][1];
+          dir = (dir + 1) % 4;
+          r += directions[dir][0];
+          c += directions[dir][1];
         }
       }
+      return inward ? coords.reverse() : coords;
+    }
 
-      return inward ? result.reverse() : result;
+    function spiralOrder(matrix, corner, inward, clockwise) {
+      const baseCoords = spiralCoordinates(matrix.length, inward, clockwise);
+      const coords = rotateCoords(baseCoords, matrix.length, corner);
+      return coords.map(([r, c]) => (matrix[r] ? matrix[r][c] : 0));
     }
 
     function binaryToAscii(bits) {
-      let chars = [];
-      for (let i = 0; i < bits.length; i += 8) {
-        const byte = bits.slice(i, i+8).join('');
-        if (byte.length === 8) chars.push(String.fromCharCode(parseInt(byte, 2)));
+      const trimmed = bits.slice(0, Math.floor(bits.length / 8) * 8);
+      const bytes = [];
+      for (let i = 0; i < trimmed.length; i += 8) {
+        const byte = trimmed.slice(i, i + 8).join('');
+        const value = parseInt(byte, 2);
+        if (value !== 0) bytes.push(String.fromCharCode(value));
       }
-      return chars.join('');
+      return bytes.join('');
     }
 
     function decodeAllSpirals() {
@@ -75,7 +147,7 @@
         return;
       }
 
-      const corners = ['tl','tr','bl','br'];
+      const corners = ['tl', 'tr', 'br', 'bl'];
       let found = false;
       let results = [];
 
@@ -93,6 +165,51 @@
       }
 
       output.textContent = found ? results.join('\n---\n') : "No valid ASCII decoding found.";
+    }
+
+    function decodeSingle() {
+      const input = document.getElementById("binaryInput").value;
+      const matrix = parseBinaryInput(input);
+      const output = document.getElementById("output");
+      if (!matrix) {
+        output.textContent = "Input must be a square block of binary.";
+        return;
+      }
+
+      const corner = document.getElementById("decodeCorner").value;
+      const clockwise = document.getElementById("decodeDir").value === 'true';
+      const inward = document.getElementById("decodeInward").value === 'true';
+
+      const bits = spiralOrder(matrix, corner, inward, clockwise);
+      const text = binaryToAscii(bits);
+      output.textContent = text;
+    }
+
+    function encodeSpiral() {
+      const text = document.getElementById("asciiInput").value;
+      const corner = document.getElementById("cornerSelect").value;
+      const clockwise = document.getElementById("dirSelect").value === 'true';
+      const inward = document.getElementById("inwardSelect").value === 'true';
+
+      const binaryStr = text.split('').map(ch => ch.charCodeAt(0).toString(2).padStart(8, '0')).join('');
+      const binary = binaryStr.split('').map(Number);
+
+      let size = Math.ceil(Math.sqrt(binary.length));
+      while (size * size < binary.length) size++;
+
+      const padded = binary.concat(Array(size * size - binary.length).fill(0));
+      const matrix = Array.from({ length: size }, () => Array(size).fill(0));
+
+      const baseCoords = spiralCoordinates(size, inward, clockwise);
+      const coords = rotateCoords(baseCoords, size, corner);
+
+      for (let i = 0; i < padded.length; i++) {
+        const [r, c] = coords[i];
+        matrix[r][c] = padded[i];
+      }
+
+      const result = matrix.map(row => row.join('')).join('\n');
+      document.getElementById("encodeOutput").textContent = result;
     }
   </script>
 </body>
